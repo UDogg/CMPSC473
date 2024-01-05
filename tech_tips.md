@@ -10,10 +10,11 @@ you would use the above command. To run the executable file just run ./main
   
 To run the executable with gdb for debugging execute the following:
 2. How to debug a C file
-    I already have gdb installed so run the following:  
-    ```
+    I already have gdb installed so run the following: 
+    ```bash
     gdb ./main
     ```
+
 
 Here are some useful GDB commands along with their descriptions:
 
