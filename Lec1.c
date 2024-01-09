@@ -44,7 +44,7 @@ int main() {
     struct Node* head = NULL; // Initialize head to NULL as the list is empty
 
     // Prompt user for input and read values for sum_diff
-    printf("Enter two integers to calculate their sum and difference: ");
+    printf("Enter two integers with space in between to calculate their sum and difference: ");
     scanf("%d %d", &a, &b);
     sum_diff(a, b, &s, &d); // Call sum_diff with user provided values
     printf("Sum: %d, Difference: %d\n", s, d); // Output the results
