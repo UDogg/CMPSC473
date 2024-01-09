@@ -63,9 +63,18 @@ int main() {
     // Display the linked list
     printf("The linked list is: ");
     displayList(head); // Call displayList to print the list
+    int yg = 0;
+    printf("Enter size of array: ");
+    scanf("%d", &yg);
 
-    long arr[] = {1, 2, 3, 4, 5}; // Initialize an array of long integers
+    long arr[yg]; // Declare an array of long integers without initializing
     long n = sizeof(arr) / sizeof(arr[0]); // Calculate the number of elements in arr
+
+    // Prompt the user for each element of the array
+    for (long i = 0; i < n; i++) {
+        printf("Enter element for doubling value %ld: ", i + 1);
+        scanf("%ld", &arr[i]); // Use %ld for reading long integers
+    }
 
     // Call map function with the array, its size, and the double_value function
     map(arr, n, double_value);
@@ -73,12 +82,11 @@ int main() {
     // Print the modified array
     for (long i = 0; i < n; i++) {
         printf("%ld ", arr[i]);
+        printf(", ");
     }
     printf("\n");
 
     return 0;
-
-    return 0; // End of the program
 }
 
 
