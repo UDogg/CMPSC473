@@ -39,12 +39,11 @@
 #endif
 
 #define ALIGNMENT 16
-#define HEADER_SIZE 8
+#define HEADER_SIZE 4
 #define FOOTER_SIZE 8
-#define INITIAL_HEAP_SIZE (1<<12)// 4KB
+#define INITIAL_HEAP_SIZE 8
 
-
-// rounds up to the nearest multiple of ALIGNMENT
+//rounds up to the nearest multiple of ALIGNMENT
 static size_t align(size_t x)
 {
     return ALIGNMENT * ((x+ALIGNMENT-1)/ALIGNMENT);
@@ -86,100 +85,73 @@ static inline void* PREV_BLKP(void* bp) {
     return (char*)bp - GET_SIZE((char*)bp - HEADER_SIZE - FOOTER_SIZE);
 }
 
+static inline int MAX(int x, int y) {
+    return x > y ? x : y;
+}
+
+static char *heap_listp; // Pointer to first block
 
 /*
  * mm_init: returns false on error, true on success.
  */
-bool mm_init(void)
-{
-    // IMPLEMENT THIS
-    // Request space from mem_sbrk for the initial empty heap
-    char* heap_listp = (char*)mem_sbrk(4*ALIGNMENT); // Adjust the size as needed
-    if (heap_listp == (void*)-1) {
-        return false; // mem_sbrk failed, return error
-    }
-    
-    // Initialize the heap area, including prologue and epilogue blocks
-    // or any other necessary initialization for the block format.
-    // Example for a simple prologue/epilogue initialization:
-    *(size_t *)(heap_listp) = 0; // Alignment padding
-    *(size_t *)(heap_listp + (1*ALIGNMENT)) = PACK(ALIGNMENT, 1); // Prologue header
-    *(size_t *)(heap_listp + (2*ALIGNMENT)) = PACK(ALIGNMENT, 1); // Prologue footer
-    *(size_t *)(heap_listp + (3*ALIGNMENT)) = PACK(0, 1); // Epilogue header
-    heap_listp += (2*ALIGNMENT);
 
-    // Extend the empty heap with a free block of INITIAL_HEAP_SIZE bytes
-    // to avoid fragmentation issues later.
-    if (extend_heap(INITIAL_HEAP_SIZE/ALIGNMENT) == NULL) {
-        return false; // Unable to extend heap, return error
-    }
+bool mm_init(void) 
+{
+    if ((heap_listp = mem_sbrk(4*HEADER_SIZE)) == (void*)-1)
+        return -1;
+    PUT(heap_listp, 0);
+    PUT(heap_listp + (1*HEADER_SIZE), PACK(FOOTER_SIZE, 1));
+    PUT(heap_listp + (2*HEADER_SIZE), PACK(FOOTER_SIZE, 1));
+    PUT(heap_listp + (3*HEADER_SIZE), PACK(0,1));
+    heap_listp += (2*HEADER_SIZE);
+    if (extend_heap(INITIAL_HEAP_SIZE/HEADER_SIZE) == NULL)
+        return false;
     return true;
 }
 
-//coalesce function
-static void *coalesce(void *bp) {
+// extend_heap - Extend heap with free block and return its block pointer
+static void *extend_heap(uint32_t words) 
+{
+    char *bp;
+    size_t size;
+    size = (words % 2) ? (words+1) * HEADER_SIZE : words * HEADER_SIZE;
+    if ((long)(bp = mem_sbrk(size)) == -1)
+        return NULL;
+    PUT(HDRP(bp), PACK(size,0));
+    PUT(FTRP(bp), PACK(size,0));
+    PUT(HDRP(NEXT_BLKP(bp)), PACK(0,1));
+    return coalesce(bp);
+}
+
+// coalesce - Boundary tag coalescing. Return ptr to coalesced block
+static void *coalesce(void *bp) 
+{
     size_t prev_alloc = GET_ALLOC(FTRP(PREV_BLKP(bp)));
     size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
-    size_t size = GET_SIZE(HDRP(bp));
-
-    if (prev_alloc && next_alloc) {            // Case 1
+    size_t size = GET_SIZE (HDRP(bp));
+    
+    if (prev_alloc && next_alloc) {
         return bp;
     }
-
-    else if (prev_alloc && !next_alloc) {      // Case 2
+    
+    else if (prev_alloc && !next_alloc){
         size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
-        PUT(HDRP(bp), PACK(size, 0));
+        PUT(HDRP(bp), PACK(size,0));
         PUT(FTRP(bp), PACK(size, 0));
     }
-
-    else if (!prev_alloc && next_alloc) {      // Case 3
+    else if (!prev_alloc && next_alloc){
         size += GET_SIZE(HDRP(PREV_BLKP(bp)));
         PUT(FTRP(bp), PACK(size, 0));
         PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
         bp = PREV_BLKP(bp);
     }
-
-    else {                                     // Case 4
-        size += GET_SIZE(HDRP(PREV_BLKP(bp))) + 
-                GET_SIZE(FTRP(NEXT_BLKP(bp)));
+    else{
+        size += GET_SIZE(HDRP(PREV_BLKP(bp)))+GET_SIZE(FTRP(NEXT_BLKP(bp)));
         PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
         PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0));
         bp = PREV_BLKP(bp);
     }
-
-    return bp;
-}
-
-
-
-/*
-* *extend_heap(size_t words)
-* returns a pointer to the newly created free block
-* helper function for mm_init
-*/
-
-// extend_heap - Extend heap with free block and return its block pointer
-// coalesce - Boundary tag coalescing. Return ptr to coalesced block
-static void *extend_heap(size_t words) {
-    char *bp;
-    size_t size;
-
-    // Align the requested size to the word boundary
-    size = (words % 2) ? (words + 1) * ALIGNMENT : words * ALIGNMENT;
-
-    // Request more memory from the OS
-    bp = mem_sbrk(size);
-    if ((long)bp == -1) {
-        return NULL; // Failed to extend the heap
-    }
-
-    // Initialize the new free block's header and the new epilogue header
-    PUT(HDRP(bp), PACK(size, 0)); // Free block header
-    PUT(FTRP(bp), PACK(size, 0)); // Free block footer
-    PUT(HDRP(NEXT_BLKP(bp)), PACK(0, 1)); // New epilogue block header
-
-    // Return the pointer to the new free block
-    return bp;
+  return bp;
 }
 
 /*
@@ -204,34 +176,35 @@ void* malloc(size_t size) {
 /*
  * free
  */
-void free(void* ptr) {
-    if (ptr == NULL) return; // Standard behavior of free
-
-    // Convert payload pointer to block pointer (assuming header is right before payload)
-    void* block_ptr = get_block_header(ptr);
-
-    // Mark the block as free
-    size_t size = GET_SIZE(HDRP(block_ptr));
-    PUT(HDRP(block_ptr), PACK(size, 0)); // Update header to mark as free
-    PUT(FTRP(block_ptr), PACK(size, 0)); // Update footer to mark as free
-
-    // Coalesce with adjacent free blocks
-    block_ptr = coalesce(block_ptr);
-
-    // Add to the free list
-    insert_free_block(block_ptr);
+void mm_free(void *bp)
+{
+    size_t size = GET_SIZE(HDRP(bp));
+    PUT(HDRP(bp), PACK(size, 0));
+    PUT(FTRP(bp), PACK(size, 0));
+    coalesce(bp);   
 }
 
 
 /*
  * realloc
  */
-void* realloc(void* oldptr, size_t size)
+void *mm_realloc(void *ptr, uint32_t size)
 {
-    // IMPLEMENT THIS
-    return NULL;
+    void *newp;
+    uint32_t copySize;
+    newp = mm_malloc(size);
+    if (newp == NULL) {
+        printf("ERROR: mm_malloc failed in mm_realloc\n");
+        exit(1);
+    }
+    copySize = GET_SIZE(HDRP(ptr));
+    if (size < copySize) {
+        copySize = size;
+    }
+    memcpy(newp, ptr, copySize);
+    mm_free(ptr);
+    return newp;
 }
-
 /*
  * calloc
  * This function is not tested by mdriver, and has been implemented for you.
@@ -275,13 +248,28 @@ static bool aligned(const void* p)
  * The line number can be used to print the line number of the calling
  * function where there was an invalid heap.
  */
-bool mm_checkheap(int line_number)
+void mm_checkheap(int verbose) 
 {
-#ifdef DEBUG
-    // Write code to check heap invariants here
-    // IMPLEMENT THIS
-#endif // DEBUG
-    return true;
+    void *bp = heap_listp;
+    if (verbose) {
+        printf("Heap (%p):\n", heap_listp);
+    }
+    if ((GET_SIZE(HDRP(heap_listp)) != FOOTER_SIZE) || !GET_ALLOC(HDRP(heap_listp))) {
+        printf("Bad prologue header\n");
+    }
+    checkblock(heap_listp);
+    for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
+        if (verbose)  {
+            printblock(bp);
+        }
+        checkblock(bp);
+    }    
+    if (verbose) {
+        printblock(bp);
+    }
+    if ((GET_SIZE(HDRP(bp)) != 0) || !(GET_ALLOC(HDRP(bp)))) {
+        printf("Bad epilogue header\n");
+    }
 }
 // following are the functions that I have added
 // according to the malloc hint announcement.
