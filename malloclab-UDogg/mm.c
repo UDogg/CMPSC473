@@ -43,6 +43,41 @@
 #define FOOTER_SIZE 8
 #define INITIAL_HEAP_SIZE 8
 
+// Function prototypes
+bool mm_init(void);
+static void *extend_heap(size_t words);
+static void *coalesce(void *bp);
+void *mm_malloc(size_t size);
+void mm_free(void *bp);
+void *mm_realloc(void *ptr, size_t size);
+void *mm_calloc(size_t nmemb, size_t size);
+static inline size_t align(size_t size);
+static inline size_t PACK(size_t size, int alloc);
+static inline void PUT(void* p, size_t val);
+static inline size_t GET(const void* p);
+static inline void* HDRP(void* bp);
+static inline void* FTRP(void* bp);
+static inline size_t GET_SIZE(const void* p);
+static inline int GET_ALLOC(const void* p);
+static inline void* NEXT_BLKP(void* bp);
+static inline void* PREV_BLKP(void* bp);
+static inline int MAX(int x, int y);
+bool mm_checkheap(int lineno);
+static bool in_heap(const void* p);
+static bool aligned(const void* p);
+static uint64_t get_total_block_size(uint64_t* block_ptr);
+static uint64_t is_block_allocated(uint64_t* block_ptr);
+static uint64_t* get_next_block(uint64_t* block_ptr);
+static void* get_payload_ptr(uint64_t* block_ptr);
+static void split_and_allocate_block(uint64_t* block_ptr);
+static bool checkblock(void *bp);
+static void printblock(void *bp);
+static uint64_t* expand_heap(size_t size);
+
+uint64_t* prologue;
+static char *heap_listp; // Pointer to first block
+
+
 //rounds up to the nearest multiple of ALIGNMENT
 static size_t align(size_t x)
 {
@@ -89,7 +124,6 @@ static inline int MAX(int x, int y) {
     return x > y ? x : y;
 }
 
-static char *heap_listp; // Pointer to first block
 
 /*
  * mm_init: returns false on error, true on success.
@@ -110,7 +144,7 @@ bool mm_init(void)
 }
 
 // extend_heap - Extend heap with free block and return its block pointer
-static void *extend_heap(uint32_t words) 
+static void *extend_heap(size_t words) 
 {
     char *bp;
     size_t size;
@@ -176,7 +210,7 @@ void* malloc(size_t size) {
 /*
  * free
  */
-void mm_free(void *bp)
+void free(void *bp)
 {
     size_t size = GET_SIZE(HDRP(bp));
     PUT(HDRP(bp), PACK(size, 0));
@@ -188,10 +222,10 @@ void mm_free(void *bp)
 /*
  * realloc
  */
-void *mm_realloc(void *ptr, uint32_t size)
+void* realloc(void *ptr, size_t size)
 {
     void *newp;
-    uint32_t copySize;
+    size_t copySize;
     newp = mm_malloc(size);
     if (newp == NULL) {
         printf("ERROR: mm_malloc failed in mm_realloc\n");
@@ -248,33 +282,32 @@ static bool aligned(const void* p)
  * The line number can be used to print the line number of the calling
  * function where there was an invalid heap.
  */
-void mm_checkheap(int verbose) 
-{
+bool mm_checkheap(int line) {
     void *bp = heap_listp;
-    if (verbose) {
-        printf("Heap (%p):\n", heap_listp);
-    }
+    printf("Checking heap at line %d\n", line); // Print the line number of the calling function
     if ((GET_SIZE(HDRP(heap_listp)) != FOOTER_SIZE) || !GET_ALLOC(HDRP(heap_listp))) {
-        printf("Bad prologue header\n");
+        printf("Bad prologue header at line %d\n", line);
+        return false; // Directly return false if the prologue header is invalid
     }
     checkblock(heap_listp);
     for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
-        if (verbose)  {
-            printblock(bp);
-        }
-        checkblock(bp);
-    }    
-    if (verbose) {
         printblock(bp);
-    }
+        if (!checkblock(bp)) { // Assuming checkblock returns a bool indicating the block's validity
+            printf("Invalid block at line %d\n", line);
+            return false; // Directly return false if a block is invalid
+        }
+    }    
+    printblock(bp);
     if ((GET_SIZE(HDRP(bp)) != 0) || !(GET_ALLOC(HDRP(bp)))) {
-        printf("Bad epilogue header\n");
+        printf("Bad epilogue header at line %d\n", line);
+        return false; // Directly return false if the epilogue header is invalid
     }
+    return true; // Return true at the end if all checks pass
 }
+
 // following are the functions that I have added
 // according to the malloc hint announcement.
 // to implement "clean code" in a modular way.
-uint64_t* prologue;
 
 uint64_t get_total_block_size(uint64_t* block_ptr) {
     return *block_ptr;
@@ -338,3 +371,35 @@ uint64_t* expand_heap(size_t size) {
     return (uint64_t*)((char*)header + HEADER_SIZE);
 }
 
+static bool checkblock(void *bp) {
+    // Ensure alignment
+    if ((size_t)bp % ALIGNMENT != 0) {
+        printf("Error: %p is not aligned\n", bp);
+        return false;
+    }
+
+    // Check if the header matches the footer
+    if (GET(HDRP(bp)) != GET(FTRP(bp))) {
+        printf("Error: header does not match footer\n");
+        return false;
+    }
+
+    // Add more checks here as needed
+
+    // If all checks passed, return true
+    return true;
+}
+
+static void printblock(void *bp) {
+    size_t hsize, halloc;
+
+    hsize = GET_SIZE(HDRP(bp));
+    halloc = GET_ALLOC(HDRP(bp));
+
+    if (hsize == 0) {
+        printf("%p: EOL\n", bp);
+        return;
+    }
+
+    printf("%p: header: [%zu:%c]\n", bp, hsize, (halloc ? 'A' : 'F'));
+}
